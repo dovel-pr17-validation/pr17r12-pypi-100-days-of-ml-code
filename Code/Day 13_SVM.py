@@ -1,0 +1,70 @@
+# %% [markdown]
+# # Day 13：线性支持向量机
+#
+# 使用年龄和估计薪资预测是否购买（0/1）。User ID 不作为特征。分层拆分让两部分的类别比例接近；测试集只用于最终评估。precision 表示预测正类中真阳性的比例，recall 表示实际正类被找回的比例，F1 是两者的调和平均，2PR/(P+R)。分类报告分别将每一类视为正类；macro avg 不按类别大小加权，weighted avg 按真实样本数加权。
+#
+# 运行前请阅读[环境与运行说明](../docs/setup.md)。本课 `.py` 是教学源文件，配套 Markdown 和 Notebook 自动同步。图形保存到 `outputs/`，设置 `COURSE_SHOW_PLOTS=1` 可显示窗口。
+
+# %%
+from pathlib import Path
+import sys
+
+# 脚本从文件位置定位仓库；Notebook 从当前工作目录向上查找。
+base = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+for candidate in (base, *base.parents):
+    if (candidate / "Code" / "course_utils.py").is_file():
+        code_dir = str(candidate / "Code")
+        if code_dir not in sys.path:
+            sys.path.insert(0, code_dir)
+        break
+else:
+    raise FileNotFoundError("找不到课程仓库，请从仓库根目录或 Code 目录启动 Notebook。")
+from course_utils import DATA, OUTPUT, finish_plot
+
+
+# %% [markdown]
+# ## 数据与基线
+#
+# 先与始终预测训练集多数类的简单基线比较。所有类别指标必须结合样本数量解读。
+
+# %%
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.dummy import DummyClassifier
+from sklearn.metrics import accuracy_score
+from course_utils import classification_summary, decision_plot
+
+data = pd.read_csv(DATA / "Social_Network_Ads.csv")
+X = data[["Age", "EstimatedSalary"]]
+y = data["Purchased"]
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.25, stratify=y, random_state=0)
+baseline = DummyClassifier(strategy="most_frequent").fit(X_train, y_train)
+print("Majority baseline accuracy:", accuracy_score(y_test, baseline.predict(X_test)))
+
+# %% [markdown]
+# ## 训练模型
+#
+# C 控制间隔违例惩罚（包括分对但落在间隔内的点）：较大 C 更重视训练违例代价，较小 C 通常容许更多违例以换取较宽间隔。SVC 的 random_state 在未启用概率估计时通常无作用。本课不在测试集重新拟合缩放器。
+
+# %%
+from sklearn.svm import SVC
+model = Pipeline([("scale", StandardScaler()), ("classifier", SVC(kernel="linear", C=1.0))])
+model.fit(X_train, y_train)
+
+# %% [markdown]
+# ## 测试评估与决策边界
+#
+# 混淆矩阵行是真实类别，列是预测类别。绘图工具在原始单位网格上调用整个模型，年龄/薪资坐标未标准化；它仅支持本课两个输入特征。
+
+# %%
+y_pred = classification_summary(model, X_test, y_test, "day13")
+decision_plot(model, X_test, y_test, "day13_test", ["Age (years)", "Estimated salary"])
+print("Support vectors per class:", model.named_steps["classifier"].n_support_)
+
+# %% [markdown]
+# ## 练习与检查
+#
+# 只在训练内比较 C=0.1、1、10，记录支持向量数量与验证成绩；Day 16 再比较非线性核。
